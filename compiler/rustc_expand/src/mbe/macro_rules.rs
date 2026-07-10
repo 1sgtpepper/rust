@@ -45,6 +45,62 @@ use crate::mbe::quoted::{RulePart, parse_one_tt};
 use crate::mbe::transcribe::transcribe;
 use crate::mbe::{self, KleeneOp};
 
+#[derive(Default)]
+struct TokenTreeStats {
+    tokens: usize,
+    groups: usize,
+    max_group_depth: usize,
+}
+
+fn token_tree_stats(stream: &TokenStream) -> TokenTreeStats {
+    let mut stats = TokenTreeStats::default();
+    let mut stack = vec![(0usize, stream.iter())];
+
+    while let Some((depth, next)) = stack.last_mut().map(|(depth, iter)| (*depth, iter.next())) {
+        match next {
+            Some(tokenstream::TokenTree::Token(..)) => {
+                stats.tokens = stats.tokens.saturating_add(1);
+            }
+            Some(tokenstream::TokenTree::Delimited(.., nested)) => {
+                stats.groups = stats.groups.saturating_add(1);
+                let nested_depth = depth.saturating_add(1);
+                stats.max_group_depth = stats.max_group_depth.max(nested_depth);
+                stack.push((nested_depth, nested.iter()));
+            }
+            None => {
+                stack.pop();
+            }
+        }
+    }
+
+    stats
+}
+
+fn trace_token_tree_stats(
+    macro_kind: &'static str,
+    macro_name: Ident,
+    input_role: &'static str,
+    stream: &TokenStream,
+) {
+    if !tracing::enabled!(tracing::Level::TRACE) {
+        return;
+    }
+
+    let stats = token_tree_stats(stream);
+    let recursive_trees = stats.tokens.saturating_add(stats.groups);
+    trace!(
+        macro_kind,
+        macro_name = %macro_name,
+        input_role,
+        top_level_trees = stream.len(),
+        recursive_trees,
+        tokens = stats.tokens,
+        groups = stats.groups,
+        max_group_depth = stats.max_group_depth,
+        "declarative macro input token-tree statistics",
+    );
+}
+
 pub(crate) struct ParserAnyMacro<'a, 'b> {
     parser: Parser<'a>,
 
@@ -235,6 +291,8 @@ impl MacroRulesMacroExpander {
         let name = self.name;
         let rules = &self.rules;
         let psess = &cx.sess.psess;
+
+        trace_token_tree_stats("derive", name, "body", body);
 
         if cx.trace_macros() {
             let msg = format!("expanding `#[derive({name})] {}`", pprust::tts_to_string(body));
@@ -437,6 +495,8 @@ fn expand_macro<'cx, 'a: 'cx>(
 ) -> Box<dyn MacResult + 'cx> {
     let psess = &cx.sess.psess;
 
+    trace_token_tree_stats("bang", name, "argument", &arg);
+
     if cx.trace_macros() {
         let msg = format!("expanding `{}! {{ {} }}`", name, pprust::tts_to_string(&arg));
         trace_macros_note(&mut cx.expansions, sp, msg);
@@ -519,6 +579,9 @@ fn expand_macro_attr(
     // Macros defined in the current crate have a real node id,
     // whereas macros from an external crate have a dummy id.
     let is_local = node_id != DUMMY_NODE_ID;
+
+    trace_token_tree_stats("attribute", name, "arguments", &args);
+    trace_token_tree_stats("attribute", name, "body", &body);
 
     if cx.trace_macros() {
         let msg = format!(
