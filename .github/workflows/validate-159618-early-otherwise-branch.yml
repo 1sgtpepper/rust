@@ -30,7 +30,7 @@ jobs:
       - name: Validate requested phase and revision
         run: |
           case "$PHASE" in
-            pre-fix|generation|final) ;;
+            pre-fix|generation|final|tidy) ;;
             *) printf 'Unsupported validation phase: %s\n' "$PHASE"; exit 1 ;;
           esac
           case "$RUN_BASELINE" in
@@ -71,6 +71,14 @@ jobs:
 
       - name: Free runner disk space
         run: src/ci/scripts/free-disk-space-linux.sh
+
+      - name: Initialize submodules required by tidy
+        if: ${{ env.PHASE == 'tidy' }}
+        run: |
+          git submodule update --init --depth 1 --recursive -- \
+            src/doc/reference \
+            src/tools/cargo \
+            src/tools/rustc-perf
 
       - name: Run baseline owner controls
         if: ${{ env.PHASE == 'pre-fix' && env.RUN_BASELINE == 'true' }}
@@ -228,6 +236,10 @@ jobs:
           ./x test --stage 1 tests/mir-opt
           ./x fmt --check
           ./x test --stage 1 tidy
+
+      - name: Run exact-head tidy
+        if: ${{ env.PHASE == 'tidy' }}
+        run: ./x test --stage 1 tidy
 
       - name: Upload MIR and diagnostic evidence
         if: ${{ always() }}
