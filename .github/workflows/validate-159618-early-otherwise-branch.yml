@@ -40,6 +40,16 @@ jobs:
             printf 'Invalid baseline revision: %s\n' "$BASE_SHA"
             exit 1
           fi
+          implementation_sha=$(
+            git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" \
+              refs/heads/fix-159618-early-otherwise-branch |
+              cut -f1
+          )
+          if [[ "$implementation_sha" != "$TARGET_SHA" ]]; then
+            printf 'Implementation branch is %s, not requested %s\n' \
+              "$implementation_sha" "$TARGET_SHA"
+            exit 1
+          fi
 
       - name: Checkout the exact implementation revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
