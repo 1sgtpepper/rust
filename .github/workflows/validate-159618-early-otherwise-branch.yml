@@ -76,6 +76,7 @@ jobs:
         if: ${{ env.PHASE == 'tidy' }}
         run: |
           git submodule update --init --depth 1 --recursive -- \
+            src/doc/book \
             src/doc/reference \
             src/tools/cargo \
             src/tools/rustc-perf
