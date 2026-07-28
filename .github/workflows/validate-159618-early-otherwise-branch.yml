@@ -44,7 +44,7 @@ jobs:
       - name: Checkout the exact implementation revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 3
+          fetch-depth: 4
           ref: ${{ vars.EOB_VALIDATION_TARGET }}
 
       - name: Confirm the exact implementation revision
