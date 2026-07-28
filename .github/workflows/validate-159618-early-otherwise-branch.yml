@@ -1,0 +1,223 @@
+name: Validate EarlyOtherwiseBranch 159618
+
+on:
+  push:
+    branches:
+      - validate-159618-early-otherwise-branch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-159618-early-otherwise-branch
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    name: ${{ vars.EOB_VALIDATION_PHASE }} at ${{ vars.EOB_VALIDATION_TARGET }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PHASE: ${{ vars.EOB_VALIDATION_PHASE }}
+      TARGET_SHA: ${{ vars.EOB_VALIDATION_TARGET }}
+    steps:
+      - name: Validate requested phase and revision
+        run: |
+          case "$PHASE" in
+            pre-fix|generation|final) ;;
+            *) printf 'Unsupported validation phase: %s\n' "$PHASE"; exit 1 ;;
+          esac
+          if [[ ! "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Invalid target revision: %s\n' "$TARGET_SHA"
+            exit 1
+          fi
+
+      - name: Checkout the exact implementation revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 2
+          ref: ${{ vars.EOB_VALIDATION_TARGET }}
+
+      - name: Confirm the exact implementation revision
+        run: |
+          actual_sha=$(git rev-parse HEAD)
+          printf 'phase=%s\nrequested=%s\nactual=%s\n' "$PHASE" "$TARGET_SHA" "$actual_sha"
+          test "$actual_sha" = "$TARGET_SHA"
+          git status --short
+
+      - name: Free runner disk space
+        run: src/ci/scripts/free-disk-space-linux.sh
+
+      - name: Run baseline owner controls
+        if: ${{ env.PHASE == 'pre-fix' }}
+        run: |
+          baseline_sha=$(git rev-parse "$TARGET_SHA^")
+          git checkout --detach "$baseline_sha"
+          ./x test tests/mir-opt/early_otherwise_branch.rs
+          ./x test tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
+          ./x test tests/mir-opt/early_otherwise_branch_noopt.rs
+          ./x test tests/mir-opt/early_otherwise_branch_68867.rs
+          ./x test tests/ui/mir/early-otherwise-branch-ice.rs
+          ./x test tests/ui/mir/hoist_deref_early_else.rs
+          git checkout --detach "$TARGET_SHA"
+
+      - name: Generate and prove the pre-fix failures
+        if: ${{ env.PHASE == 'pre-fix' }}
+        run: |
+          set +e
+          ./x test --bless tests/mir-opt/early_otherwise_branch_dead_local.rs
+          dead_status=$?
+          ./x test --bless tests/mir-opt/early_otherwise_branch.rs
+          broad_status=$?
+          set -e
+
+          printf 'dead_local_status=%s\nbroad_status=%s\n' "$dead_status" "$broad_status"
+          if [[ "$dead_status" -eq 0 || "$broad_status" -eq 0 ]]; then
+            echo "Both pre-fix FileCheck suites must reject the old behavior."
+            exit 1
+          fi
+
+          test -f tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff
+          test -f tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff
+          test -f tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff
+          test -f tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff
+
+          rg -n 'StorageDead|Ne\(' \
+            tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff
+          rg -n 'Ne\(copy \(_.*\.0: u32\), copy \(_.*\.1: u32\)\)' \
+            tests/mir-opt/early_otherwise_branch.opt5.EarlyOtherwiseBranch.diff
+          rg -n 'Ne\(copy _[0-9]+, copy _[0-9]+\)' \
+            tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff
+          rg -n -- '-.*switchInt\(move \(_.*\.0: i32\)\)' \
+            tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff
+          rg -n -- '-.*switchInt\(copy \(_.*\.0: i32\)\)' \
+            tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff
+          rg -n 'Ne\(const 1_u64, copy _[0-9]+\)' \
+            tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff
+
+          git diff --exit-code "$TARGET_SHA" -- \
+            tests/mir-opt/early_otherwise_branch.target_self.EarlyOtherwiseBranch.diff
+
+          expected_paths=$(mktemp)
+          actual_paths=$(mktemp)
+          printf '%s\n' \
+            tests/mir-opt/early_otherwise_branch.opt5.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff \
+            | sort > "$expected_paths"
+          {
+            git diff --name-only "$TARGET_SHA" --
+            git ls-files --others --exclude-standard
+          } | sort -u > "$actual_paths"
+          diff -u "$expected_paths" "$actual_paths"
+
+      - name: Prove the pre-fix Miri differential
+        if: ${{ env.PHASE == 'pre-fix' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/early-otherwise-branch-logs"
+          ./x run miri --stage 1 \
+            --args=-Zlint-mir=no \
+            --args=-Zmir-opt-level=0 \
+            --args=-Zmir-enable-passes=-EarlyOtherwiseBranch \
+            --args=tests/mir-opt/early_otherwise_branch_dead_local.rs \
+            2>&1 | tee "$RUNNER_TEMP/early-otherwise-branch-logs/miri-disabled.log"
+
+          set +e
+          ./x run miri --stage 1 \
+            --args=-Zlint-mir=no \
+            --args=-Zmir-opt-level=0 \
+            --args=-Zmir-enable-passes=+EarlyOtherwiseBranch \
+            --args=tests/mir-opt/early_otherwise_branch_dead_local.rs \
+            2>&1 | tee "$RUNNER_TEMP/early-otherwise-branch-logs/miri-enabled.log"
+          enabled_status=${PIPESTATUS[0]}
+          set -e
+
+          test "$enabled_status" -ne 0
+          rg -ni 'dead|storage.*live|no longer live' \
+            "$RUNNER_TEMP/early-otherwise-branch-logs/miri-enabled.log"
+
+      - name: Generate the post-fix MIR artifacts
+        if: ${{ env.PHASE == 'generation' }}
+        run: |
+          ./x test --bless tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test --bless tests/mir-opt/early_otherwise_branch.rs
+
+          expected_paths=$(mktemp)
+          actual_paths=$(mktemp)
+          printf '%s\n' \
+            tests/mir-opt/early_otherwise_branch.opt5.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff \
+            | sort > "$expected_paths"
+          {
+            git diff --name-only "$TARGET_SHA" --
+            git ls-files --others --exclude-standard
+          } | sort -u > "$actual_paths"
+          diff -u "$expected_paths" "$actual_paths"
+
+          git diff --exit-code "$TARGET_SHA" -- \
+            tests/mir-opt/early_otherwise_branch.target_self.EarlyOtherwiseBranch.diff
+
+      - name: Run post-fix focused controls and Miri
+        if: ${{ env.PHASE == 'generation' }}
+        run: |
+          ./x test tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test tests/mir-opt/early_otherwise_branch.rs
+          ./x test tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
+          ./x test tests/mir-opt/early_otherwise_branch_noopt.rs
+          ./x test tests/mir-opt/early_otherwise_branch_68867.rs
+          ./x test tests/ui/mir/early-otherwise-branch-ice.rs
+          ./x test tests/ui/mir/hoist_deref_early_else.rs
+          ./x run miri --stage 1 \
+            --args=-Zlint-mir=no \
+            --args=-Zmir-opt-level=0 \
+            --args=-Zmir-enable-passes=-EarlyOtherwiseBranch \
+            --args=tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x run miri --stage 1 \
+            --args=-Zlint-mir=no \
+            --args=-Zmir-opt-level=0 \
+            --args=-Zmir-enable-passes=+EarlyOtherwiseBranch \
+            --args=tests/mir-opt/early_otherwise_branch_dead_local.rs
+
+      - name: Run exact-head validation
+        if: ${{ env.PHASE == 'final' }}
+        run: |
+          ./x test tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test tests/mir-opt/early_otherwise_branch.rs
+          ./x test tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
+          ./x test tests/mir-opt/early_otherwise_branch_noopt.rs
+          ./x test tests/mir-opt/early_otherwise_branch_68867.rs
+          ./x test tests/ui/mir/early-otherwise-branch-ice.rs
+          ./x test tests/ui/mir/hoist_deref_early_else.rs
+          ./x run miri --stage 1 \
+            --args=-Zlint-mir=no \
+            --args=-Zmir-opt-level=0 \
+            --args=-Zmir-enable-passes=-EarlyOtherwiseBranch \
+            --args=tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x run miri --stage 1 \
+            --args=-Zlint-mir=no \
+            --args=-Zmir-opt-level=0 \
+            --args=-Zmir-enable-passes=+EarlyOtherwiseBranch \
+            --args=tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test tests/mir-opt
+          ./x fmt --check
+          ./x test tidy
+
+      - name: Upload MIR and diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: early-otherwise-branch-${{ env.PHASE }}-${{ env.TARGET_SHA }}
+          path: |
+            tests/mir-opt/early_otherwise_branch*.diff
+            ${{ runner.temp }}/early-otherwise-branch-logs
+          if-no-files-found: error
+          retention-days: 30
