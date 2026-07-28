@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
+      BASE_SHA: ${{ vars.EOB_VALIDATION_BASE }}
       PHASE: ${{ vars.EOB_VALIDATION_PHASE }}
       TARGET_SHA: ${{ vars.EOB_VALIDATION_TARGET }}
     steps:
@@ -33,6 +34,10 @@ jobs:
           esac
           if [[ ! "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             printf 'Invalid target revision: %s\n' "$TARGET_SHA"
+            exit 1
+          fi
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Invalid baseline revision: %s\n' "$BASE_SHA"
             exit 1
           fi
 
@@ -55,8 +60,7 @@ jobs:
       - name: Run baseline owner controls
         if: ${{ env.PHASE == 'pre-fix' }}
         run: |
-          baseline_sha=$(git rev-parse "$TARGET_SHA^")
-          git checkout --detach "$baseline_sha"
+          git checkout --detach "$BASE_SHA"
           ./x test --stage 1 tests/mir-opt/early_otherwise_branch.rs
           ./x test --stage 1 tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
           ./x test --stage 1 tests/mir-opt/early_otherwise_branch_noopt.rs
