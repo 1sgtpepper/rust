@@ -81,22 +81,22 @@ jobs:
             exit 1
           fi
 
-          test -f tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff
+          test -f tests/mir-opt/early_otherwise_branch_dead_local.dead_local.EarlyOtherwiseBranch.diff
           test -f tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff
           test -f tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff
           test -f tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff
 
-          rg -n 'StorageDead|Ne\(' \
-            tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff
-          rg -n 'Ne\(copy \(_.*\.0: u32\), copy \(_.*\.1: u32\)\)' \
+          grep -En 'StorageDead|Ne\(' \
+            tests/mir-opt/early_otherwise_branch_dead_local.dead_local.EarlyOtherwiseBranch.diff
+          grep -En 'Ne\(copy \(_.*\.0: u32\), copy \(_.*\.1: u32\)\)' \
             tests/mir-opt/early_otherwise_branch.opt5.EarlyOtherwiseBranch.diff
-          rg -n 'Ne\(copy _[0-9]+, copy _[0-9]+\)' \
+          grep -En 'Ne\(copy _[0-9]+, copy _[0-9]+\)' \
             tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff
-          rg -n -- '-.*switchInt\(move \(_.*\.0: i32\)\)' \
+          grep -En -- '-.*switchInt\(move \(_.*\.0: i32\)\)' \
             tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff
-          rg -n -- '-.*switchInt\(copy \(_.*\.0: i32\)\)' \
+          grep -En -- '-.*switchInt\(copy \(_.*\.0: i32\)\)' \
             tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff
-          rg -n 'Ne\(const 1_u64, copy _[0-9]+\)' \
+          grep -En 'Ne\(const 1_u64, copy _[0-9]+\)' \
             tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff
 
           git diff --exit-code "$TARGET_SHA" -- \
@@ -109,7 +109,7 @@ jobs:
             tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff \
-            tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch_dead_local.dead_local.EarlyOtherwiseBranch.diff \
             | sort > "$expected_paths"
           {
             git diff --name-only "$TARGET_SHA" --
@@ -139,7 +139,7 @@ jobs:
           set -e
 
           test "$enabled_status" -ne 0
-          rg -ni 'dead|storage.*live|no longer live' \
+          grep -Ein 'dead|storage.*live|no longer live' \
             "$RUNNER_TEMP/early-otherwise-branch-logs/miri-enabled.log"
 
       - name: Generate the post-fix MIR artifacts
@@ -155,7 +155,7 @@ jobs:
             tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff \
-            tests/mir-opt/early_otherwise_branch_dead_local.main.EarlyOtherwiseBranch.diff \
+            tests/mir-opt/early_otherwise_branch_dead_local.dead_local.EarlyOtherwiseBranch.diff \
             | sort > "$expected_paths"
           {
             git diff --name-only "$TARGET_SHA" --
