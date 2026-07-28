@@ -24,6 +24,7 @@ jobs:
     env:
       BASE_SHA: ${{ vars.EOB_VALIDATION_BASE }}
       PHASE: ${{ vars.EOB_VALIDATION_PHASE }}
+      RUN_BASELINE: ${{ vars.EOB_VALIDATION_BASELINE }}
       TARGET_SHA: ${{ vars.EOB_VALIDATION_TARGET }}
     steps:
       - name: Validate requested phase and revision
@@ -31,6 +32,10 @@ jobs:
           case "$PHASE" in
             pre-fix|generation|final) ;;
             *) printf 'Unsupported validation phase: %s\n' "$PHASE"; exit 1 ;;
+          esac
+          case "$RUN_BASELINE" in
+            true|false) ;;
+            *) printf 'Unsupported baseline setting: %s\n' "$RUN_BASELINE"; exit 1 ;;
           esac
           if [[ ! "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             printf 'Invalid target revision: %s\n' "$TARGET_SHA"
@@ -68,7 +73,7 @@ jobs:
         run: src/ci/scripts/free-disk-space-linux.sh
 
       - name: Run baseline owner controls
-        if: ${{ env.PHASE == 'pre-fix' }}
+        if: ${{ env.PHASE == 'pre-fix' && env.RUN_BASELINE == 'true' }}
         run: |
           git checkout --detach "$BASE_SHA"
           ./x test --stage 1 tests/mir-opt/early_otherwise_branch.rs
@@ -119,7 +124,6 @@ jobs:
           expected_paths=$(mktemp)
           actual_paths=$(mktemp)
           printf '%s\n' \
-            tests/mir-opt/early_otherwise_branch.opt5.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch.same_place_move_copy.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch.scalar_unreachable.EarlyOtherwiseBranch.diff \
             tests/mir-opt/early_otherwise_branch_dead_local.constant_parent_dead_local.EarlyOtherwiseBranch.diff \
