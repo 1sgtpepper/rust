@@ -57,21 +57,21 @@ jobs:
         run: |
           baseline_sha=$(git rev-parse "$TARGET_SHA^")
           git checkout --detach "$baseline_sha"
-          ./x test tests/mir-opt/early_otherwise_branch.rs
-          ./x test tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
-          ./x test tests/mir-opt/early_otherwise_branch_noopt.rs
-          ./x test tests/mir-opt/early_otherwise_branch_68867.rs
-          ./x test tests/ui/mir/early-otherwise-branch-ice.rs
-          ./x test tests/ui/mir/hoist_deref_early_else.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_noopt.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_68867.rs
+          ./x test --stage 1 tests/ui/mir/early-otherwise-branch-ice.rs
+          ./x test --stage 1 tests/ui/mir/hoist_deref_early_else.rs
           git checkout --detach "$TARGET_SHA"
 
       - name: Generate and prove the pre-fix failures
         if: ${{ env.PHASE == 'pre-fix' }}
         run: |
           set +e
-          ./x test --bless tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test --stage 1 --bless tests/mir-opt/early_otherwise_branch_dead_local.rs
           dead_status=$?
-          ./x test --bless tests/mir-opt/early_otherwise_branch.rs
+          ./x test --stage 1 --bless tests/mir-opt/early_otherwise_branch.rs
           broad_status=$?
           set -e
 
@@ -145,8 +145,8 @@ jobs:
       - name: Generate the post-fix MIR artifacts
         if: ${{ env.PHASE == 'generation' }}
         run: |
-          ./x test --bless tests/mir-opt/early_otherwise_branch_dead_local.rs
-          ./x test --bless tests/mir-opt/early_otherwise_branch.rs
+          ./x test --stage 1 --bless tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test --stage 1 --bless tests/mir-opt/early_otherwise_branch.rs
 
           expected_paths=$(mktemp)
           actual_paths=$(mktemp)
@@ -169,13 +169,13 @@ jobs:
       - name: Run post-fix focused controls and Miri
         if: ${{ env.PHASE == 'generation' }}
         run: |
-          ./x test tests/mir-opt/early_otherwise_branch_dead_local.rs
-          ./x test tests/mir-opt/early_otherwise_branch.rs
-          ./x test tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
-          ./x test tests/mir-opt/early_otherwise_branch_noopt.rs
-          ./x test tests/mir-opt/early_otherwise_branch_68867.rs
-          ./x test tests/ui/mir/early-otherwise-branch-ice.rs
-          ./x test tests/ui/mir/hoist_deref_early_else.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_noopt.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_68867.rs
+          ./x test --stage 1 tests/ui/mir/early-otherwise-branch-ice.rs
+          ./x test --stage 1 tests/ui/mir/hoist_deref_early_else.rs
           ./x run miri --stage 1 \
             --args=-Zlint-mir=no \
             --args=-Zmir-opt-level=0 \
@@ -190,13 +190,13 @@ jobs:
       - name: Run exact-head validation
         if: ${{ env.PHASE == 'final' }}
         run: |
-          ./x test tests/mir-opt/early_otherwise_branch_dead_local.rs
-          ./x test tests/mir-opt/early_otherwise_branch.rs
-          ./x test tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
-          ./x test tests/mir-opt/early_otherwise_branch_noopt.rs
-          ./x test tests/mir-opt/early_otherwise_branch_68867.rs
-          ./x test tests/ui/mir/early-otherwise-branch-ice.rs
-          ./x test tests/ui/mir/hoist_deref_early_else.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_dead_local.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_3_element_tuple.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_noopt.rs
+          ./x test --stage 1 tests/mir-opt/early_otherwise_branch_68867.rs
+          ./x test --stage 1 tests/ui/mir/early-otherwise-branch-ice.rs
+          ./x test --stage 1 tests/ui/mir/hoist_deref_early_else.rs
           ./x run miri --stage 1 \
             --args=-Zlint-mir=no \
             --args=-Zmir-opt-level=0 \
@@ -207,9 +207,9 @@ jobs:
             --args=-Zmir-opt-level=0 \
             --args=-Zmir-enable-passes=+EarlyOtherwiseBranch \
             --args=tests/mir-opt/early_otherwise_branch_dead_local.rs
-          ./x test tests/mir-opt
+          ./x test --stage 1 tests/mir-opt
           ./x fmt --check
-          ./x test tidy
+          ./x test --stage 1 tidy
 
       - name: Upload MIR and diagnostic evidence
         if: ${{ always() }}
