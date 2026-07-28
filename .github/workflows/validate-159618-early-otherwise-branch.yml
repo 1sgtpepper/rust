@@ -73,7 +73,7 @@ jobs:
         run: src/ci/scripts/free-disk-space-linux.sh
 
       - name: Initialize submodules required by tidy
-        if: ${{ env.PHASE == 'tidy' }}
+        if: ${{ env.PHASE == 'final' || env.PHASE == 'tidy' }}
         run: |
           git submodule update --init --depth 1 --recursive -- \
             src/doc/book \
